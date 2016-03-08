@@ -34,6 +34,7 @@
 *   04/26/01    Barry N.    OS/400 support for uprv_getDefaultLocaleID
 *   08/15/01    Steven H.   OS/400 support for uprv_getDefaultCodepage
 *   01/03/08    Steven L.   Fake Time Support
+*   03/08/16    tofutim     Support WINAPI_FAMILY_APP
 ******************************************************************************
 */
 
@@ -974,7 +975,9 @@ U_CAPI const char* U_EXPORT2
 uprv_tzname(int n)
 {
     const char *tzid = NULL;
-#if U_PLATFORM_USES_ONLY_WIN32_API
+#if WINAPI_FAMILY == WINAPI_FAMILY_APP || WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
+    return tzid;
+#elif U_PLATFORM_USES_ONLY_WIN32_API
     tzid = uprv_detectWindowsTimeZone();
 
     if (tzid != NULL) {
@@ -1323,7 +1326,11 @@ static void U_CALLCONV TimeZoneDataDirInitFn(UErrorCode &status) {
         status = U_MEMORY_ALLOCATION_ERROR;
         return;
     }
+#if WINAPI_FAMILY == WINAPI_FAMILY_APP || WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
+	const char *dir = NULL;
+#else
     const char *dir = getenv("ICU_TIMEZONE_FILES_DIR");
+#endif
 #if defined(U_TIMEZONE_FILES_DIR)
     if (dir == NULL) {
         dir = TO_STRING(U_TIMEZONE_FILES_DIR);
@@ -1569,6 +1576,9 @@ The leftmost codepage (.xxx) wins.
     }
 
     return posixID;
+
+#elif WINAPI_FAMILY == WINAPI_FAMILY_APP || WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
+	return "en_us";
 
 #elif U_PLATFORM_USES_ONLY_WIN32_API
 #define POSIX_LOCALE_CAPACITY 64
@@ -1877,6 +1887,9 @@ int_getDefaultCodepage()
     codepage[63] = 0; /* NULL terminate */
 
     return codepage;
+
+#elif WINAPI_FAMILY == WINAPI_FAMILY_APP || WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
+	return "windows-1252";
 
 #elif U_PLATFORM_USES_ONLY_WIN32_API
     static char codepage[64];
