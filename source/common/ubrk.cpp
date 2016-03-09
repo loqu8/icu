@@ -182,6 +182,14 @@ ubrk_setUText(UBreakIterator *bi,
 }
 
 
+U_CAPI void U_EXPORT2
+ubrk_setIsBreakdown(UBreakIterator *bi, UBool isBreakdown)
+{
+    BreakIterator *brit = (BreakIterator *)bi;
+    brit->isBreakdown = isBreakdown;
+}
+
+
 
 
 
