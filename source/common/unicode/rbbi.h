@@ -29,6 +29,9 @@
 #include "unicode/schriter.h"
 #include "unicode/uchriter.h"
 
+U_STABLE UBool U_EXPORT2
+rbbi_resetFactories();
+
 
 struct UTrie;
 

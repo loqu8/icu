@@ -358,6 +358,9 @@ udata_getInfo(UDataMemory *pData, UDataInfo *pInfo);
  * @stable ICU 2.0
  */
 U_STABLE void U_EXPORT2
+udata_swapCommonData(const void *data, const void *oldData, UErrorCode *err);
+
+U_STABLE void U_EXPORT2
 udata_setCommonData(const void *data, UErrorCode *err);
 
 
@@ -424,6 +427,18 @@ typedef enum UDataFileAccess {
  */
 U_STABLE void U_EXPORT2
 udata_setFileAccess(UDataFileAccess access, UErrorCode *status);
+
+/**
+ * These functions are used to swap out cjdict.
+ */
+U_STABLE void U_EXPORT2
+cjdict_reset(UErrorCode *err);
+
+U_STABLE void U_EXPORT2
+cjdict_addWord(const char *word, int32_t value, UErrorCode *err);
+
+U_STABLE void U_EXPORT2
+cjdict_swap(UErrorCode *err);
 
 U_CDECL_END
 
