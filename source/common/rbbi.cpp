@@ -595,7 +595,7 @@ int32_t RuleBasedBreakIterator::next(void) {
     fDictionaryCharCount = 0;
     int32_t result = handleNext(fData->fForwardTable);
     if (fDictionaryCharCount > 0) {
-        result = checkDictionary(startPos, result, FALSE);
+        result = checkDictionary(startPos, result, FALSE, isBreakdown);
     }
     return result;
 }
@@ -637,7 +637,7 @@ int32_t RuleBasedBreakIterator::previous(void) {
     if (fData->fSafeRevTable != NULL || fData->fSafeFwdTable != NULL) {
         result = handlePrevious(fData->fReverseTable);
         if (fDictionaryCharCount > 0) {
-            result = checkDictionary(result, startPos, TRUE);
+            result = checkDictionary(result, startPos, TRUE, isBreakdown);
         }
         return result;
     }
@@ -1575,7 +1575,8 @@ BreakIterator *  RuleBasedBreakIterator::createBufferClone(void * /*stackBuffer*
 //-------------------------------------------------------------------------------
 int32_t RuleBasedBreakIterator::checkDictionary(int32_t startPos,
                             int32_t endPos,
-                            UBool reverse) {
+                            UBool reverse,
+                            UBool isBreakdown) {
     // Reset the old break cache first.
     reset();
 
@@ -1676,7 +1677,7 @@ int32_t RuleBasedBreakIterator::checkDictionary(int32_t startPos,
         // Ask the language object if there are any breaks. It will leave the text
         // pointer on the other side of its range, ready to search for the next one.
         if (lbe != NULL) {
-            foundBreakCount += lbe->findBreaks(fText, rangeStart, rangeEnd, FALSE, fBreakType, breaks);
+            foundBreakCount += lbe->findBreaks(fText, rangeStart, rangeEnd, FALSE, isBreakdown, fBreakType, breaks);
         }
         
         // Reload the loop variables for the next go-round
@@ -1732,6 +1733,14 @@ U_NAMESPACE_END
 
 static icu::UStack *gLanguageBreakFactories = NULL;
 static icu::UInitOnce gLanguageBreakFactoriesInitOnce = U_INITONCE_INITIALIZER;
+U_CAPI UBool U_EXPORT2
+rbbi_resetFactories() {
+    if (gLanguageBreakFactories) {
+        delete gLanguageBreakFactories;
+        gLanguageBreakFactories = NULL;
+    }
+    return TRUE;
+}
 
 /**
  * Release all static memory held by breakiterator.  
