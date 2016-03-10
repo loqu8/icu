@@ -45,8 +45,9 @@ DictionaryBreakEngine::findBreaks( UText *text,
                                  int32_t startPos,
                                  int32_t endPos,
                                  UBool reverse,
+                                 UBool isBreakdown,
                                  int32_t breakType,
-                                 UStack &foundBreaks ) const {
+                                 UStack &foundBreaks) const {
     int32_t result = 0;
 
     // Find the span of characters included in the set.
@@ -87,7 +88,7 @@ DictionaryBreakEngine::findBreaks( UText *text,
         rangeEnd = current;
     }
     if (breakType >= 0 && breakType < 32 && (((uint32_t)1 << breakType) & fTypes)) {
-        result = divideUpDictionaryRange(text, rangeStart, rangeEnd, foundBreaks);
+        result = divideUpDictionaryRange(text, rangeStart, rangeEnd, isBreakdown, foundBreaks);
         utext_setNativeIndex(text, current);
     }
     
@@ -246,6 +247,7 @@ int32_t
 ThaiBreakEngine::divideUpDictionaryRange( UText *text,
                                                 int32_t rangeStart,
                                                 int32_t rangeEnd,
+                                                UBool isBreakdown,
                                                 UStack &foundBreaks ) const {
     utext_setNativeIndex(text, rangeStart);
     utext_moveIndex32(text, THAI_MIN_WORD_SPAN);
@@ -485,6 +487,7 @@ int32_t
 LaoBreakEngine::divideUpDictionaryRange( UText *text,
                                                 int32_t rangeStart,
                                                 int32_t rangeEnd,
+                                                UBool isBreakdown,
                                                 UStack &foundBreaks ) const {
     if ((rangeEnd - rangeStart) < LAO_MIN_WORD_SPAN) {
         return 0;       // Not enough characters for two words
@@ -678,6 +681,7 @@ int32_t
 BurmeseBreakEngine::divideUpDictionaryRange( UText *text,
                                                 int32_t rangeStart,
                                                 int32_t rangeEnd,
+                                                UBool isBreakdown,
                                                 UStack &foundBreaks ) const {
     if ((rangeEnd - rangeStart) < BURMESE_MIN_WORD_SPAN) {
         return 0;       // Not enough characters for two words
@@ -883,6 +887,7 @@ int32_t
 KhmerBreakEngine::divideUpDictionaryRange( UText *text,
                                                 int32_t rangeStart,
                                                 int32_t rangeEnd,
+                                                UBool isBreakdown,
                                                 UStack &foundBreaks ) const {
     if ((rangeEnd - rangeStart) < KHMER_MIN_WORD_SPAN) {
         return 0;       // Not enough characters for two words
@@ -1133,6 +1138,7 @@ int32_t
 CjkBreakEngine::divideUpDictionaryRange( UText *inText,
         int32_t rangeStart,
         int32_t rangeEnd,
+        UBool isBreakdown,
         UStack &foundBreaks ) const {
     if (rangeStart >= rangeEnd) {
         return 0;
@@ -1318,6 +1324,8 @@ CjkBreakEngine::divideUpDictionaryRange( UText *inText,
 
         for (int32_t j = 0; j < count; j++) {
             uint32_t newSnlp = (uint32_t)bestSnlp.elementAti(i) + (uint32_t)values.elementAti(j);
+            if (isBreakdown && lengths.elementAti(j) >= numCodePts)
+                break;
             int32_t ln_j_i = lengths.elementAti(j) + i;
             if (newSnlp < (uint32_t)bestSnlp.elementAti(ln_j_i)) {
                 bestSnlp.setElementAt(newSnlp, ln_j_i);

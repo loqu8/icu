@@ -81,6 +81,7 @@ UnhandledEngine::findBreaks( UText *text,
                                  int32_t startPos,
                                  int32_t endPos,
                                  UBool reverse,
+                                 UBool isBreakdown,
                                  int32_t breakType,
                                  UStack &/*foundBreaks*/ ) const {
     if (breakType >= 0 && breakType < UPRV_LENGTHOF(fHandled)) {

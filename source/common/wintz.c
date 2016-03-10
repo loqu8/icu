@@ -11,7 +11,7 @@
 
 #include "unicode/utypes.h"
 
-#if U_PLATFORM_HAS_WIN32_API && WINAPI_FAMILY != WINAPI_FAMILY_APP && WINAPI_FAMILY != WINAPI_FAMILY_PHONE_APP
+#if U_PLATFORM_HAS_WIN32_API && (!defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP))
 
 #include "wintz.h"
 #include "cmemory.h"

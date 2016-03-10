@@ -39,6 +39,14 @@ might have to #include some other header
 #include "umapfile.h"
 #include "umutex.h"
 
+#include "dictionarydata.h"
+#include "unicode/ucharstriebuilder.h"
+#include "unicode/bytestriebuilder.h"
+#include "unicode/ucharstrie.h"
+#include "unicode/bytestrie.h"
+#include "unicode/utf16.h"
+#include "unicode/rbbi.h"
+
 /***********************************************************************
 *
 *   Notes on the organization of the ICU data implementation
@@ -159,10 +167,11 @@ findCommonICUDataByName(const char *inBasename)
  * setCommonICUData.   Set a UDataMemory to be the global ICU Data
  */
 static UBool
-setCommonICUData(UDataMemory *pData,     /*  The new common data.  Belongs to caller, we copy it. */
-                 UBool       warn,       /*  If true, set USING_DEFAULT warning if ICUData was    */
-                                         /*    changed by another thread before we got to it.     */
-                 UErrorCode *pErr)
+swapCommonICUData(UDataMemory *pData,     /*  The new common data.  Belongs to caller, we copy it. */
+                  UDataMemory *pOldData,  /*  The original data to swap out.     */
+                  UBool       warn,       /*  If true, set USING_DEFAULT warning if ICUData was    */
+                                          /*    changed by another thread before we got to it.     */
+                  UErrorCode *pErr)
 {
     UDataMemory  *newCommonData = UDataMemory_createNewInstance(pErr);
     int32_t i;
@@ -178,7 +187,8 @@ setCommonICUData(UDataMemory *pData,     /*  The new common data.  Belongs to ca
     UDatamemory_assign(newCommonData, pData);
     umtx_lock(NULL);
     for (i = 0; i < UPRV_LENGTHOF(gCommonICUDataArray); ++i) {
-        if (gCommonICUDataArray[i] == NULL) {
+        if ((gCommonICUDataArray[i] == NULL) ||
+            ((pOldData != NULL) && (gCommonICUDataArray[i]->pHeader == pOldData->pHeader))) {
             gCommonICUDataArray[i] = newCommonData;
             didUpdate = TRUE;
             break;
@@ -198,6 +208,15 @@ setCommonICUData(UDataMemory *pData,     /*  The new common data.  Belongs to ca
         uprv_free(newCommonData);
     }
     return didUpdate;
+}
+
+static UBool
+setCommonICUData(UDataMemory *pData,     /*  The new common data.  Belongs to caller, we copy it. */
+                 UBool       warn,       /*  If true, set USING_DEFAULT warning if ICUData was    */
+                                         /*    changed by another thread before we got to it.     */
+                 UErrorCode *pErr)
+{
+    return swapCommonICUData(pData, NULL, warn, pErr);
 }
 
 static UBool
@@ -854,8 +873,9 @@ static UBool extendICUData(UErrorCode *pErr)
  *                                                                      *
  *----------------------------------------------------------------------*/
 U_CAPI void U_EXPORT2
-udata_setCommonData(const void *data, UErrorCode *pErrorCode) {
+udata_swapCommonData(const void *data, const void *oldData, UErrorCode *pErrorCode) {
     UDataMemory dataMemory;
+    UDataMemory oldDataMemory;
 
     if(pErrorCode==NULL || U_FAILURE(*pErrorCode)) {
         return;
@@ -872,9 +892,25 @@ udata_setCommonData(const void *data, UErrorCode *pErrorCode) {
     udata_checkCommonData(&dataMemory, pErrorCode);
     if (U_FAILURE(*pErrorCode)) {return;}
 
+    if (oldData != NULL)
+    {
+        UDataMemory_init(&oldDataMemory);
+        UDataMemory_setData(&oldDataMemory, oldData);
+        udata_checkCommonData(&oldDataMemory, pErrorCode);
+        if (U_FAILURE(*pErrorCode)) {return;}
+
+        swapCommonICUData(&dataMemory, &oldDataMemory, TRUE, pErrorCode);
+        return;
+    }
+
     /* we have good data */
     /* Set it up as the ICU Common Data.  */
     setCommonICUData(&dataMemory, TRUE, pErrorCode);
+}
+
+U_CAPI void U_EXPORT2
+udata_setCommonData(const void *data, UErrorCode *pErrorCode) {
+    udata_swapCommonData(data, NULL, pErrorCode);
 }
 
 /*---------------------------------------------------------------------------
@@ -1411,4 +1447,383 @@ U_CAPI void U_EXPORT2 udata_setFileAccess(UDataFileAccess access, UErrorCode * /
 {
     // Note: this function is documented as not thread safe.
     gDataFileAccess = access;
+}
+
+/*----------------------------------------------------------------------------*
+ *                                                                            *
+ * udictdata - move somewhere else                                            *
+ *                                                                            *
+ *----------------------------------------------------------------------------*/
+/* ICU package data file format (.dat files) ------------------------------- ***
+
+Description of the data format after the usual ICU data file header
+(UDataInfo etc.).
+
+Format version 1
+
+A .dat package file contains a simple Table of Contents of item names,
+followed by the items themselves:
+
+1. ToC table
+
+uint32_t count; - number of items
+UDataOffsetTOCEntry entry[count]; - pair of uint32_t values per item:
+    uint32_t nameOffset; - offset of the item name
+    uint32_t dataOffset; - offset of the item data
+both are byte offsets from the beginning of the data
+
+2. item name strings
+
+All item names are stored as char * strings in one block between the ToC table
+and the data items.
+
+3. data items
+
+The data items are stored following the item names block.
+Each data item is 16-aligned.
+The data items are stored in the sorted order of their names.
+
+Therefore, the top of the name strings block is the offset of the first item,
+the length of the last item is the difference between its offset and
+the .dat file length, and the length of all previous items is the difference
+between its offset and the next one.
+
+----------------------------------------------------------------------------- */
+
+struct UNewDataMemory {
+    char *file;
+    uint16_t headerSize;
+    uint8_t magic1, magic2;
+};
+
+/* UDataInfo cf. udata.h */
+static const UDataInfo dataInfo={
+    sizeof(UDataInfo),
+    0,
+
+    U_IS_BIG_ENDIAN,
+    U_CHARSET_FAMILY,
+    sizeof(UChar),
+    0,
+
+    {0x43, 0x6d, 0x6e, 0x44},     /* dataFormat="CmnD" */
+    {1, 0, 0, 0},                 /* formatVersion */
+    {3, 0, 0, 0}                  /* dataVersion */
+};
+
+static const UDataInfo dictInfo={
+    sizeof(UDataInfo),
+    0,
+
+    U_IS_BIG_ENDIAN,
+    U_CHARSET_FAMILY,
+    sizeof(UChar),
+    0,
+
+    {0x44, 0x69, 0x63, 0x74},     /* dataFormat="Dict" */
+    {1, 0, 0, 0},                 /* formatVersion */
+    {3, 0, 0, 0}                  /* dataVersion */
+};
+
+class DictData {
+private:
+    BytesTrieBuilder *bt;
+    UCharsTrieBuilder *ut;
+    UChar32 transformConstant;
+    int32_t transformType;
+public:
+    DictData(UBool isBytesTrie, UErrorCode &status);    
+    ~DictData();
+private:
+    char transform(UChar32 c, UErrorCode &status);
+    void transform(const UnicodeString &word, CharString &buf, UErrorCode &errorCode);
+public:
+    void setTransform(const char *t);
+    void addWord(const UnicodeString &word, int32_t value, UErrorCode &status); 
+    StringPiece serializeBytes(UErrorCode &status);
+    void serializeUChars(UnicodeString &s, UErrorCode &status); 
+    int32_t getTransform();
+    char *generateDat(const char *basename, int32_t &outDatFileSize); 
+};
+
+// constructs a new data dictionary. if there is an error, 
+// it will be returned in status
+// isBytesTrie != 0 will produce a BytesTrieBuilder,
+// isBytesTrie == 0 will produce a UCharsTrieBuilder
+DictData::DictData(UBool isBytesTrie, UErrorCode &status) : bt(NULL), ut(NULL), 
+    transformConstant(0), transformType(DictionaryData::TRANSFORM_NONE) {
+    if (isBytesTrie) {
+        bt = new BytesTrieBuilder(status);
+    } else {
+        ut = new UCharsTrieBuilder(status);
+    }
+}
+
+DictData::~DictData() {
+    delete bt;
+    delete ut;
+}
+
+char DictData::transform(UChar32 c, UErrorCode &status) {
+    if (transformType == DictionaryData::TRANSFORM_TYPE_OFFSET) {
+        if (c == 0x200D) { return (char)0xFF; }
+        else if (c == 0x200C) { return (char)0xFE; }
+        int32_t delta = c - transformConstant;
+        if (delta < 0 || 0xFD < delta) {
+#ifdef UDATA_DEBUG
+            fprintf(stderr, "Codepoint U+%04lx out of range for --transform offset-%04lx!\n",
+                    (long)c, (long)transformConstant);
+#endif
+            exit(U_ILLEGAL_ARGUMENT_ERROR); // TODO: should return and print the line number
+        }
+        return (char)delta;
+    } else { // no such transform type 
+        status = U_INTERNAL_PROGRAM_ERROR;
+        return (char)c; // it should be noted this transform type will not generally work
+    }
+}
+
+void DictData::transform(const UnicodeString &word, CharString &buf, UErrorCode &errorCode) {
+    UChar32 c = 0;
+    int32_t len = word.length();
+    for (int32_t i = 0; i < len; i += U16_LENGTH(c)) {
+        c = word.char32At(i);
+        buf.append(transform(c, errorCode), errorCode);
+    }
+}
+
+// sets the desired transformation data.
+// should be populated from a command line argument
+// so far the only acceptable format is offset-<hex constant>
+// eventually others (mask-<hex constant>?) may be enabled
+// more complex functions may be more difficult
+void DictData::setTransform(const char *t) {
+    if (strncmp(t, "offset-", 7) == 0) {
+        char *end;
+        unsigned long base = uprv_strtoul(t + 7, &end, 16);
+        if (end == (t + 7) || *end != 0 || base > 0x10FF80) {
+#ifdef UDATA_DEBUG
+            fprintf(stderr, "Syntax for offset value in --transform offset-%s invalid!\n", t + 7);
+#endif
+//                usageAndDie(U_ILLEGAL_ARGUMENT_ERROR);
+        }
+        transformType = DictionaryData::TRANSFORM_TYPE_OFFSET;
+        transformConstant = (UChar32)base;
+    }
+    else {
+#ifdef UDATA_DEBUG
+      fprintf(stderr, "Invalid transform specified: %s\n", t);
+#endif
+//            usageAndDie(U_ILLEGAL_ARGUMENT_ERROR);
+    }
+}
+
+// add a word to the trie
+void DictData::addWord(const UnicodeString &word, int32_t value, UErrorCode &status) {
+    if (bt) {
+        CharString buf;
+        transform(word, buf, status);
+        bt->add(buf.toStringPiece(), value, status);
+    }
+    if (ut) { ut->add(word, value, status); }
+}
+
+// if we are a bytestrie, give back the StringPiece representing the serialized version of us
+StringPiece DictData::serializeBytes(UErrorCode &status) {
+    return bt->buildStringPiece(USTRINGTRIE_BUILD_SMALL, status);
+}
+
+// if we are a ucharstrie, produce the UnicodeString representing the serialized version of us
+void DictData::serializeUChars(UnicodeString &s, UErrorCode &status) {
+    ut->buildUnicodeString(USTRINGTRIE_BUILD_SMALL, s, status);
+}
+
+int32_t DictData::getTransform() {
+    return (int32_t)(transformType | transformConstant); 
+}
+
+char *DictData::generateDat(const char *basename, int32_t &outDatFileSize)
+{
+    UErrorCode status = U_ZERO_ERROR;
+
+    // Memory to hold our dict "file"
+    UNewDataMemory pDict;
+
+    // Header
+    uint16_t headerSize = (uint16_t)(dictInfo.size + 4);
+
+    /* write the size of the header, take padding into account */
+    pDict.headerSize=(uint16_t)((headerSize+15)&~0xf);
+    pDict.magic1=0xda;
+    pDict.magic2=0x27;
+
+    UBool hasValues = true;
+
+    int32_t outDictSize;
+    const void *outDict;
+    UnicodeString usp;  
+    serializeUChars(usp, status);
+    outDictSize = usp.length() * U_SIZEOF_UCHAR;    
+    outDict = usp.getBuffer();
+    
+    // Indexes
+    int32_t indexes[DictionaryData::IX_COUNT] = {
+        DictionaryData::IX_COUNT * sizeof(int32_t), 0, 0, 0, 0, 0, 0, 0
+    };
+    int32_t size = outDictSize + indexes[DictionaryData::IX_STRING_TRIE_OFFSET];
+    indexes[DictionaryData::IX_RESERVED1_OFFSET] = size;
+    indexes[DictionaryData::IX_RESERVED2_OFFSET] = size;
+    indexes[DictionaryData::IX_TOTAL_SIZE] = size;
+    indexes[DictionaryData::IX_TRIE_TYPE] = bt ? DictionaryData::TRIE_TYPE_BYTES : DictionaryData::TRIE_TYPE_UCHARS;
+    if (hasValues) {
+        indexes[DictionaryData::IX_TRIE_TYPE] |= DictionaryData::TRIE_HAS_VALUES;
+    }
+    indexes[DictionaryData::IX_TRANSFORM] = getTransform();
+
+    // Put it together  
+    uint32_t fileSize = pDict.headerSize + sizeof(indexes) + outDictSize;
+    pDict.file = (char *)uprv_malloc(fileSize);
+
+    memcpy(pDict.file, &pDict.headerSize, 2);
+    uint32_t offset = 2;
+    memcpy(pDict.file + offset, &pDict.magic1, 1);
+    offset += 1;
+    memcpy(pDict.file + offset, &pDict.magic2, 1);
+    offset += 1;
+    memcpy(pDict.file + offset, &dictInfo, dictInfo.size);
+    offset += dictInfo.size;
+
+    /* write padding bytes to align the data section to 16 bytes */
+    uint8_t bytes[16];
+    headerSize&=0xf;
+    if(headerSize!=0) {
+        headerSize=(uint16_t)(16-headerSize);
+        uprv_memset(bytes, 0, headerSize);
+        memcpy(pDict.file + offset, bytes, headerSize);
+        offset += headerSize;
+    }
+
+    memcpy(pDict.file + offset, indexes, sizeof(indexes));
+    offset += sizeof(indexes);
+    memcpy(pDict.file + offset, outDict, outDictSize);
+    offset += outDictSize;
+    int32_t outDictFileSize = offset;
+
+    // Memory to hold our dat "file"
+    UNewDataMemory pData;
+
+    // Header
+    headerSize = (uint16_t)(dataInfo.size + 4);
+
+    /* write the size of the header, take padding into account */
+    pData.headerSize=(uint16_t)((headerSize+15)&~0xf);
+    pData.magic1=0xda;
+    pData.magic2=0x27;
+
+    uint32_t fileCount = 1;
+  uint32_t basenamelen = strlen(basename);
+    uint32_t basenameTotal = basenamelen + 1;
+    uint32_t basenameOffset = 4 + 8*fileCount;
+    uint32_t fileOffset = (basenameOffset + (basenameTotal+15))&~0xf;   // rounds to nearest 16
+    int32_t outDatSize = pData.headerSize + fileOffset + outDictFileSize;
+    outDatFileSize = (outDatSize+15) & ~0xf;
+
+    pData.file = (char *)uprv_malloc(outDatFileSize);
+
+    memcpy(pData.file, &pData.headerSize, 2);
+    offset = 2;
+    memcpy(pData.file + offset, &pData.magic1, 1);
+    offset += 1;
+    memcpy(pData.file + offset, &pData.magic2, 1);
+    offset += 1;
+    memcpy(pData.file + offset, &dataInfo, dataInfo.size);
+    offset += dataInfo.size;
+
+    /* write padding bytes to align the data section to 16 bytes */
+    headerSize&=0xf;
+    if(headerSize!=0) {
+        headerSize=(uint16_t)(16-headerSize);
+        uprv_memset(bytes, 0, headerSize);
+        memcpy(pData.file + offset, bytes, headerSize);
+        offset += headerSize;
+    }
+    memcpy(pData.file + offset, &fileCount, 4);
+    offset += 4;
+    memcpy(pData.file + offset, &basenameOffset, 4);
+    offset += 4;
+    memcpy(pData.file + offset, &fileOffset, 4);
+    offset += 4;
+    memcpy(pData.file + offset, basename, basenamelen + 1);
+    offset += basenamelen + 1;
+    
+    headerSize = basenameOffset + basenameTotal;
+    uint16_t padSize = fileOffset - headerSize;
+
+    if (padSize != 0)
+    {
+        uprv_memset(bytes, 0xaa, padSize);
+        memcpy(pData.file + offset, bytes, padSize);
+        offset += padSize;
+    }
+
+    memcpy(pData.file + offset, pDict.file, fileSize);
+    offset += fileSize;
+    free(pDict.file);
+
+    padSize = outDatFileSize - outDatSize;
+    if (padSize != 0)
+    {
+        uprv_memset(bytes, 0xaa, padSize);
+        memcpy(pData.file + offset, bytes, padSize);
+        offset += padSize;
+    }
+
+    return pData.file;
+}
+
+static DictData *cjdict;
+static char *cjdictDat;
+
+U_CAPI void U_EXPORT2
+cjdict_reset(UErrorCode *err)
+{
+  if (cjdict != NULL)
+  {
+    delete cjdict;
+    cjdict = NULL;
+  }
+  
+  cjdict_swap(err);
+}
+
+U_CAPI void U_EXPORT2
+cjdict_addWord(const char *word, int32_t value, UErrorCode *err)
+{
+  if (cjdict == NULL)
+  {
+    cjdict = new DictData(FALSE, *err);
+    if (*err != U_ZERO_ERROR) return;
+  }
+
+  UnicodeString uword(word);
+  cjdict->addWord(uword, value, *err);  
+}
+
+U_CAPI void U_EXPORT2
+cjdict_swap(UErrorCode *err)
+{
+  if (cjdict == NULL)
+  {
+    cjdict = new DictData(FALSE, *err);
+    if (*err != U_ZERO_ERROR) return;
+  }
+
+  int32_t fileSize;
+  char *newDat = cjdict->generateDat("icudt57l/brkitr/cjdict.dict", fileSize);
+  udata_swapCommonData(newDat, cjdictDat, err);
+  if (*err != U_ZERO_ERROR) return;
+
+  rbbi_resetFactories();
+  uprv_free(cjdictDat);
+  cjdictDat = newDat;
 }

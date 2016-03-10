@@ -87,6 +87,7 @@ class DictionaryBreakEngine : public LanguageBreakEngine {
    * @param endPos The end of the run within the supplied text.
    * @param reverse Whether the caller is looking for breaks in a reverse
    * direction.
+   * @param isBreakdown Whether to ignore whole length of text
    * @param breakType The type of break desired, or -1.
    * @param foundBreaks An allocated C array of the breaks found, if any
    * @return The number of breaks found.
@@ -95,6 +96,7 @@ class DictionaryBreakEngine : public LanguageBreakEngine {
                               int32_t startPos,
                               int32_t endPos,
                               UBool reverse,
+                              UBool isBreakdown,
                               int32_t breakType,
                               UStack &foundBreaks ) const;
 
@@ -120,12 +122,14 @@ class DictionaryBreakEngine : public LanguageBreakEngine {
   * @param text A UText representing the text
   * @param rangeStart The start of the range of dictionary characters
   * @param rangeEnd The end of the range of dictionary characters
+  * @param isBreakdown Whether to ignore whole length of text
   * @param foundBreaks Output of C array of int32_t break positions, or 0
   * @return The number of breaks found
   */
   virtual int32_t divideUpDictionaryRange( UText *text,
                                            int32_t rangeStart,
                                            int32_t rangeEnd,
+                                           UBool isBreakdown,
                                            UStack &foundBreaks ) const = 0;
 
 };
@@ -183,6 +187,7 @@ class ThaiBreakEngine : public DictionaryBreakEngine {
   virtual int32_t divideUpDictionaryRange( UText *text,
                                            int32_t rangeStart,
                                            int32_t rangeEnd,
+                                           UBool isBreakdown,
                                            UStack &foundBreaks ) const;
 
 };
@@ -239,6 +244,7 @@ class LaoBreakEngine : public DictionaryBreakEngine {
   virtual int32_t divideUpDictionaryRange( UText *text,
                                            int32_t rangeStart,
                                            int32_t rangeEnd,
+                                           UBool isBreakdown,
                                            UStack &foundBreaks ) const;
 
 };
@@ -295,6 +301,7 @@ class BurmeseBreakEngine : public DictionaryBreakEngine {
   virtual int32_t divideUpDictionaryRange( UText *text, 
                                            int32_t rangeStart, 
                                            int32_t rangeEnd, 
+                                           UBool isBreakdown, 
                                            UStack &foundBreaks ) const; 
  
 }; 
@@ -351,6 +358,7 @@ class KhmerBreakEngine : public DictionaryBreakEngine {
   virtual int32_t divideUpDictionaryRange( UText *text, 
                                            int32_t rangeStart, 
                                            int32_t rangeEnd, 
+                                           UBool isBreakdown, 
                                            UStack &foundBreaks ) const; 
  
 }; 
@@ -415,6 +423,7 @@ class CjkBreakEngine : public DictionaryBreakEngine {
   virtual int32_t divideUpDictionaryRange( UText *text,
           int32_t rangeStart,
           int32_t rangeEnd,
+          UBool isBreakdown,
           UStack &foundBreaks ) const;
 
 };

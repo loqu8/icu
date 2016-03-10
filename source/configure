@@ -5146,6 +5146,12 @@ x86_64-*-cygwin)
 	else
 		icu_cv_host_frag=mh-cygwin-msvc
 	fi ;;
+arm-*-cygwin)
+	if test "$GCC" = yes; then
+		icu_cv_host_frag=mh-cygwinarm
+	else
+		icu_cv_host_frag=mh-cygwin-msvc
+	fi ;;	
 *-*-mingw*)
 	if test "$GCC" = yes; then
                 cat confdefs.h - <<_ACEOF >conftest.$ac_ext

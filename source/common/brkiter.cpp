@@ -199,6 +199,7 @@ BreakIterator::getAvailableLocales(int32_t& count)
 
 BreakIterator::BreakIterator()
 {
+    isBreakdown = FALSE;
     *validLocale = *actualLocale = 0;
 }
 

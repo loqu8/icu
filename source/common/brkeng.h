@@ -75,6 +75,7 @@ class LanguageBreakEngine : public UMemory {
                               int32_t startPos,
                               int32_t endPos,
                               UBool reverse,
+                              UBool isBreakdown,
                               int32_t breakType,
                               UStack &foundBreaks ) const = 0;
 
@@ -200,6 +201,7 @@ class UnhandledEngine : public LanguageBreakEngine {
                               int32_t startPos,
                               int32_t endPos,
                               UBool reverse,
+                              UBool isBreakdown,
                               int32_t breakType,
                               UStack &foundBreaks ) const;
 

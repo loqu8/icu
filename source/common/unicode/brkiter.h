@@ -639,6 +639,9 @@ private:
      * It's provided to make the compiler happy. Do not call.
      */
     BreakIterator& operator=(const BreakIterator&);
+    
+public:
+    UBool isBreakdown;      // [tu] skip whole phrase when generating the breaks *for UBRK_WORD
 };
 
 #ifndef U_HIDE_DEPRECATED_API

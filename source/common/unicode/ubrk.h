@@ -355,6 +355,19 @@ ubrk_setUText(UBreakIterator* bi,
 
 
 /**
+ * Sets the value of isBreakdown
+ * @param bi The iterator to use
+ * @param isBreakdown Whether to include whole text length as word.
+ *             This function just sets the value of isBreakdown
+ * @stable ICU 5.1.1
+ */
+U_STABLE void U_EXPORT2
+ubrk_setIsBreakdown(UBreakIterator* bi,
+             UBool          isBreakdown);
+
+
+
+/**
  * Determine the most recently-returned text boundary.
  *
  * @param bi The break iterator to use.

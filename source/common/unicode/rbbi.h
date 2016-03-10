@@ -29,6 +29,9 @@
 #include "unicode/schriter.h"
 #include "unicode/uchriter.h"
 
+U_STABLE UBool U_EXPORT2
+rbbi_resetFactories();
+
 
 struct UTrie;
 
@@ -63,6 +66,8 @@ struct RBBIStateTable;
  *
  */
 class U_COMMON_API RuleBasedBreakIterator /*U_FINAL*/ : public BreakIterator {
+public:
+    static UBool ResetFactories();
 
 protected:
     /**
@@ -743,9 +748,10 @@ protected:
      * @param startPos  The start position of a range of text
      * @param endPos    The end position of a range of text
      * @param reverse   The call is for the reverse direction
+     * @param isBreakdown   Whether to ignore the whole length or include it
      * @internal
      */
-    int32_t checkDictionary(int32_t startPos, int32_t endPos, UBool reverse);
+    int32_t checkDictionary(int32_t startPos, int32_t endPos, UBool reverse, UBool isBreakdown);
 #endif  /* U_HIDE_INTERNAL_API */
 
 private:
