@@ -1022,7 +1022,17 @@ uprv_convertToPosix(uint32_t hostid, char *posixID, int32_t posixIDCapacity, UEr
     int32_t tmpLen = 0;
     char locName[157];  /* ULOC_FULLNAME_CAPACITY */
 
+#if defined(WINAPI_FAMILY) && (WINAPI_FAMILY == WINAPI_FAMILY_APP || WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP)
+/* int GetLocaleInfoEx(
+  _In_opt_  LPCWSTR lpLocaleName,
+  _In_      LCTYPE  LCType,
+  _Out_opt_ LPWSTR  lpLCData,
+  _In_      int     cchData
+);*/
+    tmpLen = GetLocaleInfoEx(hostid, LOCALE_SNAME, (LPSTR)locName, UPRV_LENGTHOF(locName));
+#else
     tmpLen = GetLocaleInfoA(hostid, LOCALE_SNAME, (LPSTR)locName, UPRV_LENGTHOF(locName));
+#endif
     if (tmpLen > 1) {
         /* Windows locale name may contain sorting variant, such as "es-ES_tradnl".
            In such case, we need special mapping data found in the hardcoded table
